@@ -26,7 +26,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   # Dependencies
-  spec.add_dependency "llm_chain", "~> 0.1"
+  spec.add_dependency "llm_chain", "~> 0.5.2"
   spec.add_dependency "thor", "~> 1.0"
   spec.add_dependency "colorize", "~> 0.8"
   spec.add_dependency "rugged", "~> 1.0"
