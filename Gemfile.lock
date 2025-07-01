@@ -3,7 +3,7 @@ PATH
   specs:
     code_sage (0.1.0)
       colorize (~> 0.8)
-      llm_chain (~> 0.1)
+      llm_chain (~> 0.5.2)
       rugged (~> 1.0)
       thor (~> 1.0)
 
