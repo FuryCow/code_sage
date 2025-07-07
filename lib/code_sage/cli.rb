@@ -11,6 +11,8 @@ module CodeSage
     option :verbose, aliases: '-v', type: :boolean, desc: "Verbose output"
     option :rag, type: :boolean, 
                  desc: "Enable RAG (Retrieval Augmented Generation) functionality (requires vector database)"
+    option :auto_fix, aliases: '--auto-fix', type: :boolean, desc: "Automatically apply suggested fixes to files"
+    option :confirm_fixes, aliases: '--confirm-fixes', type: :boolean, default: true, desc: "Confirm before applying fixes (default: true)"
     def review
       puts "🔮 CodeSage - Wisdom for your code".colorize(:cyan)
       puts
@@ -20,9 +22,12 @@ module CodeSage
           branch: options[:branch] || 'main',
           files: options[:files],
           format: options[:format],
+          format_explicit: ARGV.include?('--format') || ARGV.any? { |arg| arg.start_with?('--format=') },
           config_path: options[:config],
           verbose: options[:verbose],
-          enable_rag: options[:rag] || false
+          enable_rag: options[:rag] || false,
+          auto_fix: options[:auto_fix] || false,
+          confirm_fixes: options[:confirm_fixes] != false
         )
         
         result = reviewer.review
@@ -50,6 +55,7 @@ module CodeSage
       config_instance = Config.new
       
       if options[:show]
+        config_instance.show_config_info
         puts "📋 CodeSage Configuration".colorize(:cyan).bold
         puts "=" * 50
         puts YAML.dump(config_instance.data)
@@ -61,7 +67,7 @@ module CodeSage
         config_instance.save!
         puts "✅ Configuration updated: #{options[:key]} = #{options[:value]}".colorize(:green)
       else
-        puts "📋 Current configuration file: #{config_instance.config_path}".colorize(:cyan)
+        config_instance.show_config_info
         puts "Use --show to display configuration"
         puts "Use --key KEY --value VALUE to update settings"
         puts "Use --reset to restore defaults"

@@ -1,0 +1,38 @@
+llm:
+  provider: qwen
+  model: qwen3:1.7b
+  temperature: 0.2
+
+git:
+  default_branch: main
+  include_patterns:
+    - "*.rb"
+    - "*.rake"
+    - "Gemfile"
+    - "Rakefile"
+  exclude_patterns:
+    - "spec/**/*"
+    - "test/**/*"
+
+review:
+  focus_areas:
+    - security
+    - performance
+    - maintainability
+    - best_practices
+  severity_levels:
+    - low
+    - medium
+    - high
+    - critical
+
+output:
+  format: json
+  verbose: false
+  colors: false
+
+auto_fix:
+  enabled: true
+  confirm_before_apply: true
+  create_backups: true
+  backup_extension: ".backup"

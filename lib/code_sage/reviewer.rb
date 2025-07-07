@@ -9,13 +9,31 @@ module CodeSage
         branch: 'main',
         files: nil,
         format: 'console',
+        format_explicit: false,
         config_path: nil,
         verbose: false,
-        enable_rag: false  # Отключаем RAG по умолчанию
+        enable_rag: false,  # Отключаем RAG по умолчанию
+        auto_fix: false,
+        confirm_fixes: true
       }.merge(options)
       
+      # Load configuration first
+      @config = @options[:config_path] ? Config.new(@options[:config_path]) : Config.new
+      
+      # Show config info in verbose mode
+      if @options[:verbose]
+        @config.show_config_info
+      end
+      
+      # Determine output format: CLI explicit > config > CLI default
+      output_format = if @options[:format_explicit]
+                        @options[:format]
+                      else
+                        @config.data['output']['format'] || @options[:format]
+                      end
+      
       @git_analyzer = GitAnalyzer.new(@options)
-      @formatter = ReportFormatter.new(@options[:format])
+      @formatter = ReportFormatter.new(output_format)
       @llm_chain = setup_llm_chain
     end
     
@@ -42,6 +60,11 @@ module CodeSage
       report = generate_report(reviews)
       output_report(report)
       
+      # Apply auto-fixes if requested
+      if @options[:auto_fix]
+        apply_fixes(reviews)
+      end
+      
       { success: true, reviews: reviews, report: report }
     rescue => e
       { success: false, error: e.message }
@@ -50,8 +73,8 @@ module CodeSage
     private
     
     def setup_llm_chain
-      # Load configuration
-      config = @options[:config_path] ? Config.new(@options[:config_path]) : Config.new
+      # Use already loaded configuration
+      config = @config
       
       llm_config = config.data['llm']
       provider = llm_config['provider'] || 'openai'
@@ -221,6 +244,129 @@ module CodeSage
     def output_report(report)
       formatted_report = @formatter.format(report)
       puts formatted_report
+    end
+    
+    def apply_fixes(reviews)
+      puts "\n🔧 Auto-fixing mode enabled".colorize(:cyan).bold
+      
+      files_to_fix = []
+      
+      reviews.each do |review|
+        next unless review[:review].include?('issue') || review[:review].include?('problem') || 
+                   review[:review].include?('fix') || review[:review].include?('improvement')
+        
+        files_to_fix << review[:file]
+      end
+      
+      if files_to_fix.empty?
+        puts "✅ No files need auto-fixing".colorize(:green)
+        return
+      end
+      
+      puts "📝 Files to fix: #{files_to_fix.join(', ')}"
+      
+      if @options[:confirm_fixes]
+        print "Do you want to apply auto-fixes? (y/N): "
+        response = STDIN.gets.chomp.downcase
+        return unless response == 'y' || response == 'yes'
+      end
+      
+      files_to_fix.each do |file_path|
+        puts "🔧 Fixing #{file_path}..." if @options[:verbose]
+        
+        begin
+          fixed_content = get_fixed_content(file_path)
+          if fixed_content && fixed_content != File.read(file_path)
+            apply_fix_to_file(file_path, fixed_content)
+            puts "✅ Fixed #{file_path}".colorize(:green)
+          else
+            puts "⚠️  No changes needed for #{file_path}".colorize(:yellow)
+          end
+        rescue => e
+          puts "❌ Error fixing #{file_path}: #{e.message}".colorize(:red)
+        end
+      end
+    end
+    
+    def get_fixed_content(file_path)
+      return nil unless File.exist?(file_path)
+      
+      content = File.read(file_path)
+      prompt = build_fix_prompt(file_path, content)
+      
+      puts "🤖 Generating fixes for #{file_path}..." if @options[:verbose]
+      
+      # Use LLM to get fixed content
+      full_prompt = "#{build_fix_system_message}\n\n#{prompt}"
+      fixed_content = @llm_chain.ask(full_prompt)
+      
+      # Extract Ruby code from the response
+      extract_ruby_code(fixed_content)
+    end
+    
+    def apply_fix_to_file(file_path, fixed_content)
+      # Create backup
+      backup_path = "#{file_path}.backup.#{Time.now.to_i}"
+      File.write(backup_path, File.read(file_path))
+      
+      # Apply fixes
+      File.write(file_path, fixed_content)
+      
+      puts "💾 Backup created: #{backup_path}" if @options[:verbose]
+    end
+    
+    def build_fix_system_message
+      <<~PROMPT
+        You are CodeSage, an expert Ruby developer specializing in code fixes and improvements.
+        
+        Your task is to:
+        1. Analyze the provided Ruby code
+        2. Apply all necessary fixes for issues found
+        3. Improve code quality, security, and performance
+        4. Return ONLY the corrected Ruby code
+        
+        Guidelines:
+        - Fix syntax errors and bugs
+        - Improve Ruby idioms and best practices
+        - Enhance security and performance
+        - Maintain original functionality
+        - Keep the same file structure and class/module names
+        - Add necessary require statements if missing
+        
+        IMPORTANT: Return ONLY the corrected Ruby code without any explanations, 
+        markdown formatting, or additional text. The response should be valid Ruby code that can be saved directly to a file.
+      PROMPT
+    end
+    
+    def build_fix_prompt(file_path, content)
+      <<~PROMPT
+        Please fix the following Ruby file:
+        
+        File: #{file_path}
+        
+        Current code:
+        ```ruby
+        #{content}
+        ```
+        
+        Apply all necessary fixes and improvements while maintaining the original functionality.
+        Return only the corrected Ruby code.
+      PROMPT
+    end
+    
+    def extract_ruby_code(response)
+      # Remove markdown code blocks if present
+      cleaned = response.gsub(/```ruby\s*\n/, '').gsub(/```\s*$/, '')
+      
+      # Remove leading/trailing whitespace
+      cleaned = cleaned.strip
+      
+      # Validate that it looks like Ruby code (basic check)
+      if cleaned.include?('class ') || cleaned.include?('module ') || cleaned.include?('def ') || cleaned.include?('require')
+        cleaned
+      else
+        nil
+      end
     end
   end
 end 

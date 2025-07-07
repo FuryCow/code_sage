@@ -23,6 +23,12 @@ module CodeSage
         'format' => 'console',
         'verbose' => false,
         'colors' => true
+      },
+      'auto_fix' => {
+        'enabled' => false,
+        'confirm_before_apply' => true,
+        'create_backups' => true,
+        'backup_extension' => '.backup'
       }
     }.freeze
     
@@ -53,11 +59,32 @@ module CodeSage
       @data = DEFAULT_CONFIG.dup
       save!
     end
+
+    def config_info
+      if File.exist?(@config_path)
+        "Using config file: #{@config_path}"
+      else
+        "No config file found, using defaults"
+      end
+    end
+
+    def show_config_info
+      puts "📋 #{config_info}".colorize(:cyan)
+    end
     
     private
     
     def default_config_path
-      File.expand_path('~/.code_sage.yml')
+      # Сначала ищем в текущей директории
+      local_config = File.expand_path('.code_sage.yml')
+      return local_config if File.exist?(local_config)
+      
+      # Если не найден, ищем в домашней папке
+      global_config = File.expand_path('~/.code_sage.yml')
+      return global_config if File.exist?(global_config)
+      
+      # Если ни один не найден, возвращаем путь к локальному для создания
+      local_config
     end
     
     def load_config
@@ -68,7 +95,7 @@ module CodeSage
         DEFAULT_CONFIG.dup
       end
     rescue => e
-      puts "Warning: Could not load config file #{@config_path}: #{e.message}".colorize(:yellow)
+      puts "Warning: Could not load config file #{@config_path}: #{e.message}".colorize(:red)
       DEFAULT_CONFIG.dup
     end
     
